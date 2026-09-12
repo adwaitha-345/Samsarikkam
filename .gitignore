@@ -1,0 +1,15 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Argos Translate models and temporary caches
+.argos-translate/
+downloads/
+
+# IDE configurations
+.vscode/
+.idea/
