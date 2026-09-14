@@ -1,34 +1,287 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Offline NMT Translation Service</title>
+    <title>Samsarikkam | Offline NMT Translation</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- HTMX & Lucide Icons -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-</head>
-<body class="bg-slate-50 min-h-screen flex items-center justify-center p-6">
-    <div class="max-w-xl w-full bg-white p-8 rounded-xl shadow-md border border-slate-200">
-        <h1 class="text-2xl font-bold mb-2 text-slate-800">Local Translation Service</h1>
-        <p class="text-sm text-slate-500 mb-6">Runs completely offline on local NMT model engines.</p>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-flex; }
+        .htmx-request .btn-text { display: none; }
         
-        <form hx-post="/translate" hx-target="#output" hx-swap="outerHTML" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Source Text (Spanish):</label>
-                <textarea name="text" rows="4" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Escribe algo en español..."></textarea>
-            </div>
-            
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition">
-                Translate to English
-            </button>
-        </form>
+        textarea::-webkit-scrollbar {
+            width: 6px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 9999px;
+        }
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 font-sans text-slate-100 min-h-screen flex items-center justify-center p-4 sm:p-6 md:p-10 relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
 
-        <div class="mt-6">
-            <label class="block text-sm font-medium text-slate-700 mb-1">Translation Result:</label>
-            <div id="output" class="p-4 bg-slate-100 rounded-lg border border-dashed border-slate-300 text-slate-400 italic">
-                Translation will appear here...
+    <!-- Ambient Glowing Background Blobs -->
+    <div class="absolute top-1/4 -left-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute bottom-1/4 -right-32 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+    <!-- Main Card Container -->
+    <div class="max-w-3xl w-full bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-slate-800/80 shadow-2xl shadow-indigo-950/50 overflow-hidden relative z-10">
+        
+        <!-- Header -->
+        <div class="border-b border-slate-800/80 p-6 sm:p-8 bg-slate-900/50">
+            <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-2xl shadow-lg shadow-indigo-500/20 text-white">
+                        <i data-lucide="languages" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-200 bg-clip-text text-transparent">
+                                Samsarikkam
+                            </h1>
+                        </div>
+                        <p class="text-xs sm:text-sm text-slate-400 mt-0.5">Offline neural translation engine</p>
+                    </div>
+                </div>
+                
+                <!-- Status Badge -->
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>Ready to translate</span>
+                </div>
             </div>
         </div>
+
+        <!-- Body Form -->
+        <div class="p-6 sm:p-8 space-y-6">
+            <form id="translate-form"
+                  hx-post="/translate" 
+                  hx-target="#output" 
+                  hx-swap="innerHTML" 
+                  hx-indicator="#submit-btn"
+                  class="space-y-6">
+                
+                <!-- Hidden inputs for translation direction backend handling -->
+                <input type="hidden" id="source_lang" name="source_lang" value="es">
+                <input type="hidden" id="target_lang" name="target_lang" value="en">
+
+                <!-- Interactive Language Selector Bar -->
+                <div class="grid grid-cols-12 gap-2 items-center bg-slate-950/60 p-2 rounded-2xl border border-slate-800/60">
+                    
+                    <!-- Source Selector / Display -->
+                    <div class="col-span-5 flex items-center justify-between px-3 py-2 bg-slate-900/80 rounded-xl border border-slate-800">
+                        <span id="source-label" class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish
+                        </span>
+                    </div>
+                    
+                    <!-- Swap Button -->
+                    <div class="col-span-2 flex justify-center">
+                        <button type="button" 
+                                onclick="swapLanguages()" 
+                                title="Swap source and target languages"
+                                class="p-2.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white rounded-xl border border-indigo-500/30 transition-all duration-200 active:scale-95 group">
+                            <i data-lucide="arrow-right-left" class="w-4 h-4 group-hover:rotate-180 transition-transform duration-300"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Target Selector / Display -->
+                    <div class="col-span-5 flex items-center justify-between px-3 py-2 bg-slate-900/80 rounded-xl border border-slate-800">
+                        <span id="target-label" class="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> English
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Input Group -->
+                <div class="space-y-2">
+                    <div class="relative group">
+                        <textarea 
+                            id="text"
+                            name="text" 
+                            rows="4" 
+                            required
+                            oninput="updateCharCount(this)"
+                            class="w-full p-4 pr-10 text-slate-100 bg-slate-950/40 border border-slate-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none transition-all duration-200 placeholder:text-slate-600 text-sm leading-relaxed resize-y" 
+                            placeholder="Escribe o pega tu texto en español aquí..."></textarea>
+                        
+                        <!-- Clear Input Button -->
+                        <button type="button" 
+                                onclick="clearInput()" 
+                                title="Clear text"
+                                class="absolute right-3 top-3 text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition p-1.5 rounded-lg">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="flex justify-end items-center px-1">
+                        <span id="char-count" class="text-[11px] font-medium text-slate-500">0 characters</span>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button type="submit" 
+                        id="submit-btn"
+                        class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.99] text-white font-semibold py-3.5 px-5 rounded-2xl shadow-lg shadow-indigo-600/25 transition-all duration-200 flex items-center justify-center gap-2 group">
+                    
+                    <!-- Loading State -->
+                    <span class="htmx-indicator items-center gap-2">
+                        <i data-lucide="loader-2" class="w-5 h-5 animate-spin text-indigo-200"></i>
+                        <span class="text-sm">Translating text...</span>
+                    </span>
+
+                    <!-- Default State -->
+                    <span class="btn-text flex items-center gap-2 text-sm">
+                        <span id="btn-label">Translate Spanish to English</span>
+                    </span>
+                </button>
+            </form>
+
+            <!-- Output Section -->
+            <div class="space-y-2 pt-2">
+                <div class="flex justify-between items-center px-1">
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        Result (<span id="output-lang-name">English</span>)
+                    </label>
+                    
+                    <!-- Copy Action Button -->
+                    <button onclick="copyOutput()" id="copy-btn" class="text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-1 rounded-lg border border-indigo-500/20 font-medium flex items-center gap-1.5 transition">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        <span>Copy</span>
+                    </button>
+                </div>
+
+                <!-- HTMX Swappable Container -->
+                <div id="output" class="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 text-slate-300 min-h-[110px] text-sm leading-relaxed transition-all">
+                    <p class="italic text-slate-600">Translation output will appear here...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-slate-950/80 border-t border-slate-800/80 px-6 py-4 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-3">
+            <span class="flex items-center gap-1.5 bg-emerald-500/5 border border-emerald-500/10 px-2.5 py-1 rounded-md text-emerald-400/90">
+                Samsarikkam
+            </span>
+        </div>
     </div>
+
+    <!-- Client-Side Scripts -->
+    <script>
+        lucide.createIcons();
+
+        let currentDirection = 'es-en'; // 'es-en' or 'en-es'
+
+        function swapLanguages() {
+            const sourceInput = document.getElementById('source_lang');
+            const targetInput = document.getElementById('target_lang');
+            const sourceLabel = document.getElementById('source-label');
+            const targetLabel = document.getElementById('target-label');
+            const textarea = document.getElementById('text');
+            const btnLabel = document.getElementById('btn-label');
+            const outputLangName = document.getElementById('output-lang-name');
+
+            if (currentDirection === 'es-en') {
+                // Switch to English -> Spanish
+                currentDirection = 'en-es';
+                sourceInput.value = 'en';
+                targetInput.value = 'es';
+
+                sourceLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> English`;
+                targetLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish`;
+                
+                textarea.placeholder = "Type or paste your English text here...";
+                btnLabel.innerText = "Translate English to Spanish";
+                outputLangName.innerText = "Spanish";
+            } else {
+                // Switch to Spanish -> English
+                currentDirection = 'es-en';
+                sourceInput.value = 'es';
+                targetInput.value = 'en';
+
+                sourceLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish`;
+                targetLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> English`;
+                
+                textarea.placeholder = "Escribe o pega tu texto en español aquí...";
+                btnLabel.innerText = "Translate Spanish to English";
+                outputLangName.innerText = "English";
+            }
+        }
+
+        function updateCharCount(textarea) {
+            const count = textarea.value.length;
+            document.getElementById('char-count').innerText = `${count} character${count !== 1 ? 's' : ''}`;
+        }
+
+        function clearInput() {
+            const textarea = document.getElementById('text');
+            textarea.value = '';
+            updateCharCount(textarea);
+            textarea.focus();
+        }
+
+        function copyOutput() {
+            const outputText = document.getElementById('output').innerText;
+            if (outputText && !outputText.includes("Translation output will appear here...")) {
+                navigator.clipboard.writeText(outputText).then(() => {
+                    const copyBtn = document.getElementById('copy-btn');
+                    copyBtn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> <span class="text-emerald-400">Copied!</span>`;
+                    lucide.createIcons();
+                    setTimeout(() => {
+                        copyBtn.innerHTML = `<i data-lucide="copy" class="w-3.5 h-3.5"></i> <span>Copy</span>`;
+                        lucide.createIcons();
+                    }, 2000);
+                });
+            }
+        }
+
+        document.body.addEventListener('htmx:afterSwap', function() {
+            lucide.createIcons();
+        });
+    </script>
 </body>
 </html>
