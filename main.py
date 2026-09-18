@@ -6,21 +6,24 @@ from transformers import MarianMTModel, MarianTokenizer
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Load models for both translation directions
-MODEL_ES_EN = "Helsinki-NLP/opus-mt-es-en"
-MODEL_EN_ES = "Helsinki-NLP/opus-mt-en-es"
+# Cache loaded models in memory so they aren't reloaded on every request
+LOADED_MODELS = {}
 
-print("Loading local NMT models into memory...")
-
-# Spanish -> English
-tokenizer_es_en = MarianTokenizer.from_pretrained(MODEL_ES_EN)
-model_es_en = MarianMTModel.from_pretrained(MODEL_ES_EN)
-
-# English -> Spanish
-tokenizer_en_es = MarianTokenizer.from_pretrained(MODEL_EN_ES)
-model_en_es = MarianMTModel.from_pretrained(MODEL_EN_ES)
-
-print("Both models loaded successfully!")
+def get_model_and_tokenizer(source_lang: str, target_lang: str):
+    """Dynamically fetch and cache MarianMT models."""
+    model_name = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
+    
+    if model_name not in LOADED_MODELS:
+        try:
+            print(f"Loading model '{model_name}' into memory...")
+            tokenizer = MarianTokenizer.from_pretrained(model_name)
+            model = MarianMTModel.from_pretrained(model_name)
+            LOADED_MODELS[model_name] = (tokenizer, model)
+        except Exception:
+            # Fall back to English pivot if direct translation pair is unavailable
+            return None, None
+            
+    return LOADED_MODELS[model_name]
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -29,25 +32,28 @@ async def home(request: Request):
 @app.post("/translate", response_class=HTMLResponse)
 async def translate_text(
     request: Request, 
-    text: str = Form(...),
+    text: str = Form(""),
     source_lang: str = Form("es"),
     target_lang: str = Form("en")
 ):
     clean_text = text.strip()
     if not clean_text:
-        return '<div id="output" class="p-4 bg-slate-950/60 text-amber-400 rounded-2xl border border-amber-500/20 text-sm">Please enter text to translate.</div>'
+        return '<p class="italic text-slate-500">Please enter text to translate.</p>'
     
-    # Route to the correct model based on source language
-    if source_lang == "en" and target_lang == "es":
-        tokenizer = tokenizer_en_es
-        model = model_en_es
-    else:
-        tokenizer = tokenizer_es_en
-        model = model_es_en
+    if source_lang == target_lang:
+        return f'<p class="text-slate-100 font-medium text-sm leading-relaxed">{clean_text}</p>'
+
+    tokenizer, model = get_model_and_tokenizer(source_lang, target_lang)
+    
+    if not tokenizer or not model:
+        return f'<p class="text-amber-400 font-medium text-sm">Model pair <strong>{source_lang.upper()} → {target_lang.upper()}</strong> is not available on Hugging Face.</p>'
 
     # Perform inference
-    inputs = tokenizer(clean_text, return_tensors="pt", padding=True)
-    translated_tokens = model.generate(**inputs)
-    translated_text = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-
-    return f'<p class="text-slate-100 font-medium text-sm leading-relaxed">{translated_text}</p>'
+    try:
+        inputs = tokenizer(clean_text, return_tensors="pt", padding=True)
+        translated_tokens = model.generate(**inputs)
+        translated_text = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+        
+        return f'<p class="text-slate-100 font-medium text-sm leading-relaxed">{translated_text}</p>'
+    except Exception as e:
+        return f'<p class="text-red-400 text-sm">Translation error: {str(e)}</p>'
