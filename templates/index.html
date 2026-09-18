@@ -105,18 +105,28 @@
                   hx-indicator="#submit-btn"
                   class="space-y-6">
                 
-                <!-- Hidden inputs for translation direction backend handling -->
-                <input type="hidden" id="source_lang" name="source_lang" value="es">
-                <input type="hidden" id="target_lang" name="target_lang" value="en">
+                <!-- Hidden inputs for backend handling -->
+                <input type="hidden" id="source_lang" name="source_lang" value="">
+                <input type="hidden" id="target_lang" name="target_lang" value="">
 
                 <!-- Interactive Language Selector Bar -->
                 <div class="grid grid-cols-12 gap-2 items-center bg-slate-950/60 p-2 rounded-2xl border border-slate-800/60">
                     
-                    <!-- Source Selector / Display -->
-                    <div class="col-span-5 flex items-center justify-between px-3 py-2 bg-slate-900/80 rounded-xl border border-slate-800">
-                        <span id="source-label" class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish
-                        </span>
+                    <!-- Source Dropdown -->
+                    <div class="col-span-5 relative flex items-center bg-slate-900/80 rounded-xl border border-slate-800 px-3 py-1.5 focus-within:border-indigo-500 transition-colors">
+                        <span class="w-2 h-2 rounded-full bg-indigo-500 shrink-0 mr-2"></span>
+                        <select id="source-select" onchange="handleLanguageChange('source')" class="w-full bg-transparent text-xs font-bold uppercase tracking-wider text-slate-200 focus:outline-none cursor-pointer pr-2">
+                            <option class="bg-slate-900 text-slate-400" value="" selected disabled>Select Language</option>
+                            <option class="bg-slate-900 text-slate-200" value="zh">Chinese</option>
+                            <option class="bg-slate-900 text-slate-200" value="en">English</option>
+                            <option class="bg-slate-900 text-slate-200" value="fr">French</option>
+                            <option class="bg-slate-900 text-slate-200" value="de">German</option>
+                            <option class="bg-slate-900 text-slate-200" value="hi">Hindi</option>
+                            <option class="bg-slate-900 text-slate-200" value="it">Italian</option>
+                            <option class="bg-slate-900 text-slate-200" value="ja">Japanese</option>
+                            <option class="bg-slate-900 text-slate-200" value="pt">Portuguese</option>
+                            <option class="bg-slate-900 text-slate-200" value="es">Spanish</option>
+                        </select>
                     </div>
                     
                     <!-- Swap Button -->
@@ -129,11 +139,22 @@
                         </button>
                     </div>
                     
-                    <!-- Target Selector / Display -->
-                    <div class="col-span-5 flex items-center justify-between px-3 py-2 bg-slate-900/80 rounded-xl border border-slate-800">
-                        <span id="target-label" class="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> English
-                        </span>
+                    <!-- Target Dropdown -->
+                    <div class="col-span-5 relative flex items-center bg-slate-900/80 rounded-xl border border-slate-800 px-3 py-1.5 focus-within:border-emerald-500 transition-colors">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mr-2"></span>
+                        <select id="target-select" onchange="handleLanguageChange('target')" class="w-full bg-transparent text-xs font-bold uppercase tracking-wider text-indigo-300 focus:outline-none cursor-pointer pr-2">
+                            <option class="bg-slate-900 text-slate-400" value="" selected disabled>Select Language</option>
+                            <option class="bg-slate-900 text-slate-200" value="zh">Chinese</option>
+                            <option class="bg-slate-900 text-slate-200" value="en">English</option>
+                            <option class="bg-slate-900 text-slate-200" value="fr">French</option>
+                            <option class="bg-slate-900 text-slate-200" value="de">German</option>
+                            <option class="bg-slate-900 text-slate-200" value="hi">Hindi</option>
+                            <option class="bg-slate-900 text-slate-200" value="it">Italian</option>
+                            <option class="bg-slate-900 text-slate-200" value="ja">Japanese</option>
+                            <option class="bg-slate-900 text-slate-200" value="ml">Malayalam</option>
+                            <option class="bg-slate-900 text-slate-200" value="pt">Portuguese</option>
+                            <option class="bg-slate-900 text-slate-200" value="es">Spanish</option>
+                        </select>
                     </div>
                 </div>
 
@@ -147,7 +168,7 @@
                             required
                             oninput="updateCharCount(this)"
                             class="w-full p-4 pr-10 text-slate-100 bg-slate-950/40 border border-slate-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none transition-all duration-200 placeholder:text-slate-600 text-sm leading-relaxed resize-y" 
-                            placeholder="Escribe o pega tu texto en español aquí..."></textarea>
+                            placeholder="Type or paste text to translate..."></textarea>
                         
                         <!-- Clear Input Button -->
                         <button type="button" 
@@ -176,7 +197,7 @@
 
                     <!-- Default State -->
                     <span class="btn-text flex items-center gap-2 text-sm">
-                        <span id="btn-label">Translate Spanish to English</span>
+                        <span id="btn-label">Select languages to translate</span>
                     </span>
                 </button>
             </form>
@@ -185,7 +206,7 @@
             <div class="space-y-2 pt-2">
                 <div class="flex justify-between items-center px-1">
                     <label class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        Result (<span id="output-lang-name">English</span>)
+                        Result (<span id="output-lang-name">Target</span>)
                     </label>
                     
                     <!-- Copy Action Button -->
@@ -214,42 +235,56 @@
     <script>
         lucide.createIcons();
 
-        let currentDirection = 'es-en'; // 'es-en' or 'en-es'
+        function syncUI() {
+            const sourceSelect = document.getElementById('source-select');
+            const targetSelect = document.getElementById('target-select');
+            
+            const sourceLang = sourceSelect.value;
+            const targetLang = targetSelect.value;
+            
+            const sourceName = sourceSelect.options[sourceSelect.selectedIndex].text;
+            const targetName = targetSelect.options[targetSelect.selectedIndex].text;
+
+            // Sync hidden inputs for backend
+            document.getElementById('source_lang').value = sourceLang;
+            document.getElementById('target_lang').value = targetLang;
+
+            // Update Labels & Placeholders
+            if (!sourceLang || !targetLang) {
+                document.getElementById('btn-label').innerText = 'Select languages to translate';
+                document.getElementById('output-lang-name').innerText = targetLang ? targetName : 'Target';
+            } else {
+                document.getElementById('btn-label').innerText = `Translate ${sourceName} to ${targetName}`;
+                document.getElementById('output-lang-name').innerText = targetName;
+            }
+        }
+
+        function handleLanguageChange(changedSource) {
+            const sourceSelect = document.getElementById('source-select');
+            const targetSelect = document.getElementById('target-select');
+
+            // If user selects the same language on both sides, auto-swap or shift the other
+            if (sourceSelect.value && targetSelect.value && sourceSelect.value === targetSelect.value) {
+                if (changedSource === 'source') {
+                    const fallbackOption = Array.from(targetSelect.options).find(opt => opt.value && opt.value !== sourceSelect.value);
+                    if (fallbackOption) targetSelect.value = fallbackOption.value;
+                } else {
+                    const fallbackOption = Array.from(sourceSelect.options).find(opt => opt.value && opt.value !== targetSelect.value);
+                    if (fallbackOption) sourceSelect.value = fallbackOption.value;
+                }
+            }
+            syncUI();
+        }
 
         function swapLanguages() {
-            const sourceInput = document.getElementById('source_lang');
-            const targetInput = document.getElementById('target_lang');
-            const sourceLabel = document.getElementById('source-label');
-            const targetLabel = document.getElementById('target-label');
-            const textarea = document.getElementById('text');
-            const btnLabel = document.getElementById('btn-label');
-            const outputLangName = document.getElementById('output-lang-name');
+            const sourceSelect = document.getElementById('source-select');
+            const targetSelect = document.getElementById('target-select');
 
-            if (currentDirection === 'es-en') {
-                // Switch to English -> Spanish
-                currentDirection = 'en-es';
-                sourceInput.value = 'en';
-                targetInput.value = 'es';
+            const temp = sourceSelect.value;
+            sourceSelect.value = targetSelect.value;
+            targetSelect.value = temp;
 
-                sourceLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> English`;
-                targetLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish`;
-                
-                textarea.placeholder = "Type or paste your English text here...";
-                btnLabel.innerText = "Translate English to Spanish";
-                outputLangName.innerText = "Spanish";
-            } else {
-                // Switch to Spanish -> English
-                currentDirection = 'es-en';
-                sourceInput.value = 'es';
-                targetInput.value = 'en';
-
-                sourceLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500"></span> Spanish`;
-                targetLabel.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> English`;
-                
-                textarea.placeholder = "Escribe o pega tu texto en español aquí...";
-                btnLabel.innerText = "Translate Spanish to English";
-                outputLangName.innerText = "English";
-            }
+            syncUI();
         }
 
         function updateCharCount(textarea) {
@@ -282,6 +317,9 @@
         document.body.addEventListener('htmx:afterSwap', function() {
             lucide.createIcons();
         });
+
+        // Initialize state on load
+        syncUI();
     </script>
 </body>
 </html>
