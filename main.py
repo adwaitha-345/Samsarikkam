@@ -8,42 +8,50 @@ templates = Jinja2Templates(directory="templates")
 
 LOADED_MODELS = {}
 
-# Map standard codes to HF naming & tokens
+# Exact single-word fallback overrides for high-frequency edge cases
+COMMON_OVERRIDES = {
+    ("de", "en"): {
+        "nein": "No",
+        "ja": "Yes",
+        "danke": "Thank you",
+        "bitte": "Please / You're welcome",
+    },
+    ("en", "de"): {
+        "no": "Nein",
+        "yes": "Ja",
+        "thank you": "Danke",
+        "thanks": "Danke",
+    },
+}
+
 LANG_CONFIG = {
-    "ja": {"hf_code": "jap", "token": ">>jap<<"},
-    "pt": {"hf_code": "pt", "token": ">>por<<"},
-    "es": {"hf_code": "es", "token": ">>spa<<"},
-    "fr": {"hf_code": "fr", "token": ">>fra<<"},
-    "it": {"hf_code": "it", "token": ">>ita<<"},
-    "de": {"hf_code": "de", "token": ">>deu<<"},
-    "en": {"hf_code": "en", "token": ">>eng<<"},
-    "zh": {"hf_code": "zh", "token": ">>zho<<"},
-    "hi": {"hf_code": "hi", "token": ">>hin<<"},
-    "ml": {"hf_code": "ml", "token": ">>mal<<"},
-    "ta": {"hf_code": "ta", "token": ">>tam<<"},
-    "te": {"hf_code": "te", "token": ">>tel<<"},
-    "kn": {"hf_code": "kn", "token": ">>kan<<"},
+    "de": {"token": ">>deu<<"},
+    "en": {"token": ">>eng<<"},
+    "es": {"token": ">>spa<<"},
+    "fr": {"token": ">>fra<<"},
+    "it": {"token": ">>ita<<"},
+    "pt": {"token": ">>por<<"},
+    "zh": {"token": ">>zho<<"},
+    "ja": {"token": ">>jap<<"},
+    "hi": {"token": ">>hin<<"},
+    "ml": {"token": ">>mal<<"},
+    "ta": {"token": ">>tam<<"},
+    "te": {"token": ">>tel<<"},
+    "kn": {"token": ">>kan<<"},
 }
 
 def get_hf_model_names(src: str, tgt: str):
-    """Generate candidate Hugging Face model repository IDs for a pair."""
-    src_cfg = LANG_CONFIG.get(src, {"hf_code": src})
-    tgt_cfg = LANG_CONFIG.get(tgt, {"hf_code": tgt})
-    
-    s_code, t_code = src_cfg["hf_code"], tgt_cfg["hf_code"]
-    
+    """Generate prioritized Hugging Face model repository IDs."""
     candidates = [
-        f"Helsinki-NLP/opus-mt-{s_code}-{t_code}",
-        f"Helsinki-NLP/opus-mt-tc-big-{s_code}-{t_code}",
+        f"Helsinki-NLP/opus-mt-{src}-{tgt}",
+        f"Helsinki-NLP/opus-mt-tc-big-{src}-{tgt}",
     ]
     
-    # Romance group fallbacks
     if src == "en" and tgt in ["pt", "es", "fr", "it"]:
         candidates.append("Helsinki-NLP/opus-mt-en-ROMANCE")
     elif src in ["pt", "es", "fr", "it"] and tgt == "en":
         candidates.append("Helsinki-NLP/opus-mt-ROMANCE-en")
         
-    # Multilingual fallbacks for languages without dedicated single-pair repos
     if tgt == "en":
         candidates.append("Helsinki-NLP/opus-mt-mul-en")
     elif src == "en":
@@ -66,39 +74,69 @@ def load_model_pair(src: str, tgt: str):
     return None, None
 
 def run_inference(text: str, src: str, tgt: str, tokenizer, model) -> str:
-    """Run inference with required target tokens."""
+    """Run inference with adaptive decoding parameters."""
     tgt_token = LANG_CONFIG.get(tgt, {}).get("token", "")
-    
-    # Check if target token is needed for multi-target or romance models
     model_path = getattr(model.config, "_name_or_path", "")
+    
+    # Pre-format target tokens for multi-target or romance models
     if ("ROMANCE" in model_path or "-mul" in model_path) and tgt_token:
         formatted_text = f"{tgt_token} {text}"
     else:
         formatted_text = text
 
     inputs = tokenizer(formatted_text, return_tensors="pt", padding=True)
-    translated_tokens = model.generate(**inputs)
-    return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    
+    word_count = len(text.split())
+    
+    # For single words / short phrases, use greedy search (num_beams=1) to prevent double outputs like "no no"
+    if word_count <= 3:
+        generation_kwargs = {
+            "max_length": 128,
+            "num_beams": 1,
+            "do_sample": False,
+        }
+    else:
+        generation_kwargs = {
+            "max_length": 512,
+            "num_beams": 4,
+            "early_stopping": True,
+            "no_repeat_ngram_size": 3,
+        }
+
+    translated_tokens = model.generate(**inputs, **generation_kwargs)
+    
+    decoded_text = tokenizer.decode(
+        translated_tokens[0], 
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=True
+    ).strip()
+    
+    return decoded_text
 
 def translate_text_pipeline(text: str, source_lang: str, target_lang: str) -> str:
-    """Try direct translation; if missing, pivot through English."""
-    # Step 1: Direct Translation Attempt
+    """Try direct translation with overrides; if missing, pivot through English."""
+    normalized_input = text.strip().lower().rstrip(".!?")
+    
+    # Check exact dictionary override first
+    if (source_lang, target_lang) in COMMON_OVERRIDES:
+        if normalized_input in COMMON_OVERRIDES[(source_lang, target_lang)]:
+            return COMMON_OVERRIDES[(source_lang, target_lang)][normalized_input]
+
+    # Step 1: Direct Translation
     tok, mod = load_model_pair(source_lang, target_lang)
     if tok and mod:
         return run_inference(text, source_lang, target_lang, tok, mod)
 
     # Step 2: English Pivot (Source -> EN -> Target)
     if source_lang != "en" and target_lang != "en":
-        # Step A: Source -> EN
         tok_src_en, mod_src_en = load_model_pair(source_lang, "en")
-        # Step B: EN -> Target
         tok_en_tgt, mod_en_tgt = load_model_pair("en", target_lang)
 
         if tok_src_en and mod_src_en and tok_en_tgt and mod_en_tgt:
             intermediate_en = run_inference(text, source_lang, "en", tok_src_en, mod_src_en)
             return run_inference(intermediate_en, "en", target_lang, tok_en_tgt, mod_en_tgt)
 
-    raise ValueError(f"Unable to resolve translation path for {source_lang.upper()} → {target_lang.upper()}")
+    raise ValueError(f"Unable to resolve translation model for {source_lang.upper()} → {target_lang.upper()}")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
