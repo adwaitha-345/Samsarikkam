@@ -1,12 +1,28 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.engines.argos_engine import translate_argos, ARGOS_LANGUAGES
+from app.engines.argos_engine import translate_argos, setup_argos_models
 from app.engines.indic_engine import translate_indic
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
+# Non-blocking lifespan model loading
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Perform startup loading tasks
+    try:
+        setup_argos_models()
+    except Exception as e:
+        print(f"Argos init note: {e}")
+    yield
+    # Shutdown cleanup (if any)
+
+app = FastAPI(lifespan=lifespan)
+
+# Resolve path to Samsarikkam/templates
+BASE_DIR = Path(__file__).resolve().parent.parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 INDIAN_LANGUAGES = {"hi", "ml", "ta", "te", "kn"}
 
@@ -18,7 +34,7 @@ def route_translation(text: str, source_lang: str, target_lang: str) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/translate", response_class=HTMLResponse)
 async def translate_text(
